@@ -1,0 +1,232 @@
+---
+title: "Final Project on stat331 offerd by Stanford"
+output: html_notebook
+---
+# Reference:
+Confidence Bands for Survival Curves Under the Proportional Hazards Model
+Author(s): D. Y. Lin, T. R. Fleming and L. J. Wei
+Source: Biometrika, Vol. 81, No. 1 (Mar., 1994), pp. 73-81
+Published by: Biometrika Trust
+Stable URL: http://www.jstor.org/stable/2337051
+
+Please read the guideline to the project [here]("project.pdf")
+
+# load the library
+
+```{r}
+library(survival)
+library(survminer)
+```
+
+
+# Load the data
+```{r}
+data=read.table("peacedata.csv", head=T, sep=",")
+attach(data)
+```
+
+# Check the data
+
+```{r}
+summary(data)
+# No missing values, but still needs to factorize variables
+head(data)
+```
+```{r}
+names(data)
+```
+```{r}
+dim(data)
+```
+```{r}
+hist(age)
+plot(density(age))
+```
+```{r}
+table(hidiabet)
+table(hihypert)
+```
+```{r}
+table(tx)
+```
+```{r}
+hist(sysbp)
+```
+
+
+```{r}
+plot(density(t2death), main=" death density plot")
+```
+ 
+
+# Data preprocessing
+
+```{r}
+data$tx <- as.factor(data$tx)
+data$gender<- as.factor(data$gender)
+data$hidiabet<- as.factor(data$hidiabet)
+data$hihypert<- as.factor(data$hihypert)
+```
+
+
+# Surivival curve 
+
+```{r}
+KM <- survfit(Surv(t2death,death)~1,type="kaplan-meier", conf.type="log-log")
+plot(KM, main="survival function for rectime (K-M estimate)", xlab="days", ylab="p",xlim = c(0,100))
+``` 
+
+# Task 1:
+
+Conduct the logrank test to test the treatment effect of ACE-inhibitor therapy in
+reducing mortality
+
+```{r}
+survdiff(Surv(t2death,death)~tx,data = data)
+```
+Fail to reject H0 that treatment efect of ACE-inhibitor therapy does not work in reducing mortality
+
+
+
+# Task 2:
+
+Estimate the hazard ratio of the ACE-inhibitor versus the standard care only and construct the associated confidence interval based on the Cox regression model. Report your findings. Compare the p-value of the treatment effect with that from the logrank test. Why are they almost identical?
+
+```{r}
+cox<- coxph(Surv(t2death,death)~tx,data = data)
+summary(cox)
+```
+Interpretation:
+
+* At a given instant in time, someone who is having the treatment is 0.8873 times as likely to die as someone who is not having the treatment.
+
+* We are 95% confident that the true HR is between 0.7591 and 1.037
+
+*These are all tests for the null hypothesis: b1=0 v.s b1!=0*
+
+
+# Task3
+
+It is known that age, systolic blood pressure, gender, history of diabetes and history of
+hypertension are associated with the survival time. Estimate the hazard ratio of the
+the ACE-inhibitor versus the standard care only but adjusting for the aforementioned
+factors, using the multivariate Cox regression model. Report your fundings.
+
+
+```{r}
+coxm<- coxph(Surv(t2death,death)~.,data = data)
+summary(coxm)
+```
+
+* At a given instant in time, the probability of dying for someone who is 1 taking the treatment is 12.57% lower than someone who is not taking the treatment adjusting fo rage, systolic blood pressure, gender, history of diabetes and history of
+hypertension score. The confidence interval is 0.7479 to 1.0220
+ 
+* We also find that all the facotrs except for age are significant at 0.1 level.
+* The test result suggests that there is at least one coefficient that is not equal to 0.
+
+# Task4
+
+Estimate the hazard ratio of the ACE-inhibitor versus the standard care only and
+construct the associated confidence interval based on the Cox regression model in male
+and female patients, separately. Test if these two hazard ratios are identical. Report
+and interpret your findings.
+```{r}
+male <- subset(data,data$gender==0)
+female <- subset(data,data$gender==1)
+summary(female)
+summary(male)
+```
+```{r}
+coxmale<- coxph(Surv(t2death,death)~tx,data = male)
+summary(coxmale)
+```
+```{r}
+coxfe<- coxph(Surv(t2death,death)~tx,data = male)
+summary(coxfe)
+
+```
+
+# Task5 
+
+The clinical investigator decides to develop prognostic regression models using the baseline age, systolic blood pressure, gender, history of diabetes and history of hypertension to predict the survival time for patients receiving the conventional therapy only and for patients receiving the ACE-inhibitor plus the conventional therapy. 
+
+To this end, one may build two separate Cox regression models in patient receiving the conventional therapy only (tx=0) and in patient receiving the ACE-inhibitor plus the conventional therapy (tx=1).
+```{r}
+data0 = subset(data,data$tx==0)
+data0 <- subset(data0,select = -c(tx))
+
+data1 = subset(data,data$tx==1)
+data1 <- subset(data1,select = -c(tx))
+
+model0 <- coxph(Surv(t2death,death)~.,data = data0)
+model1 <- coxph(Surv(t2death,death)~.,data = data1)
+
+cox.zph(model0)
+plot(cox.zph(model1))
+```
+
+## 5(a) 
+
+Plot the estimated survival functions for following four patients:
+* patient A receiving the conventional therapy only (age=60, sysbp=140, gender=1, hidiabet=0, hihypert=1)
+* patient B receiving the ACE-inhibitor plus conventional therapy (age=140, sysbp=60, gender=1, hidiabet=0, hihypert=1)
+* patient C receiving the conventional therapy only (age=60, sysbp=140, gender=0, hidiabet=0, hihypert=1)
+* patient D receiving the ACE-inhibitor plus conventional therapy (age=140, sysbp=60, gender=0, hidiabet=0, hihypert=1)
+```{r}
+# Create the new data  
+a <- data.frame(row.names = NULL, check.rows = FALSE,
+           check.names = TRUE, fix.empty.names = TRUE,
+           stringsAsFactors = default.stringsAsFactors(),
+                          'gender' = c(0,1), 
+                          'age' = c(60,60),
+                          'hidiabet'=c(0,0),
+                          'hihypert'=c(1,1),
+                          'sysbp'=c(140,140)
+                          )
+a$gender<- as.factor(a$gender)
+a$hidiabet<- as.factor(a$hidiabet)
+a$hihypert<- as.factor(a$hihypert)
+
+a
+```
+
+
+```{r}
+
+fita <- survfit(model0, newdata = a)
+ggsurvplot(fita, conf.int = TRUE,
+           ggtheme = theme_minimal(), data = a,
+           ylim = c(0.85, 1),
+           legend.labs = c("Male","Female"),
+)
+```
+
+```{r}
+fitb <- survfit(model1, newdata = a, data = a) 
+fitb
+```
+
+```{r}
+ggsurvplot(fitb, conf.int = TRUE,
+           ylim = c(0.85, 1), xlim =c(0,100),
+           legend.labs = c("Male","Female")
+)
+```
+
+## 5(b) 
+
+The researcher decides to use the restricted mean survival time (up to 80 months) to summarize the survival curve. What are the RMST for patients A and B based on your estimated survival curves.
+```{r}
+print(fita,print.rmean=TRUE)
+# Of 4130 observation, there are only 334 useful 
+print(fitb,print.rmean=TRUE)
+# Of 4153 observation, there are only 299 useful 
+```
+Patient A: 85.4
+
+Patient B: 81.6
+ 
+
+
+
+
