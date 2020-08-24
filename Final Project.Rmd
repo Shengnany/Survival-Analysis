@@ -9,7 +9,7 @@ Source: Biometrika, Vol. 81, No. 1 (Mar., 1994), pp. 73-81
 Published by: Biometrika Trust
 Stable URL: http://www.jstor.org/stable/2337051
 
-Please read the guideline to the project [here]("project.pdf")
+Please read the guideline to the project: "project.pdf"
 
 # load the library
 
