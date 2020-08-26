@@ -1,0 +1,500 @@
+---
+title: "Survival Analysis Report"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+## Install the packages
+```{r}
+#install.packages(c("survival", "survminer"))
+```
+
+## Load the packages
+```{r}
+library("survival")
+library("survminer")
+library(survival)
+library(tidyverse)
+library(dbplyr)
+```
+
+## Read in data sets
+
+We’ll use the lung cancer data available in the survival package.
+```{r}
+data("lung")
+```
+
+## Analze the data
+
+#### Data summary
+```{r}
+summary(lung)
+```
+
+### Variable names
+
+* inst: Institution code
+* time: Survival time in days
+* status: censoring status 1=censored, 2=dead
+* age: Age in years
+* sex: Male=1 Female=2
+* ph.ecog: ECOG performance score (0=good 5=dead)
+* ph.karno: Karnofsky performance score (bad=0-good=100) rated by physician
+* pat.karno: Karnofsky performance score as rated by patient
+* meal.cal: Calories consumed at meals
+* wt.loss: Weight loss in last six months
+
+
+
+#### Data structure
+```{r}
+str(lung)
+```
+
+#### Correlations
+```{r}
+cor(lung,use="pairwise.complete.obs")
+```
+
+
+#### Factorize sex and ph.ecog 
+```{r}
+data <- as.data.frame(lung)
+data$sex <- as.factor(data$sex)
+data$ph.ecog <- as.factor(data$ph.ecog)
+```
+
+#### Check some features' distributions
+```{r}
+table(data$sex)
+```
+```{r}
+table(data$ph.ecog)
+```
+
+```{r}
+library(plyr)
+mu <- ddply(data, "sex", summarise, grp.mean=mean(age))
+head(mu)
+p<-ggplot(data, aes(x=age, color =sex)) +
+  geom_density()+
+  geom_vline(data=mu, aes(xintercept=grp.mean, color=sex),
+             linetype="dashed")
+p
+detach(package:plyr)
+```
+
+```{r} 
+plot(data$status,  data$time,          # plot the variables 
+   xlab="Status",        # x−axis label 
+   ylab="Time in Days",
+  )              # y−axis label
+```
+
+#### Check for anomalies
+```{r}
+data %>% group_by(status) %>% 
+  summarise(n = n()) %>% 
+  mutate(freq = n / sum(n))
+```
+censored data: 27.6%, not bad
+
+
+
+```{r}
+sapply(data, function(x) sum(is.na(x)))
+```
+
+
+
+## Fit a model
+
+### 1.Non-parametric
+```{r}
+surv<-Surv(data$time,data$status)
+```
+#### Kaplan-Meier estimator 
+
+```{r}
+fit_KM <- survfit(surv~1,type="kaplan-meier", conf.type="log-log")
+```
+
+Survival Curves
+```{r}
+plot(fit_KM, col = 'blue', main="Survival Function for time (K-M estimate)", xlab="days", ylab="p")
+```
+
+Cumulative Hazard Function
+```{r}
+plot(fit_KM, fun="cumhaz",col = 'red',ylab = 'H(t) = -log[S(t)]',xlab = 'Days', main = 'Estimated Cumulative Hazard Function')
+```
+
+
+Restricted Mean
+```{r}
+print(fit_KM,print.rmean=TRUE)
+```
+
+Other plots
+```{r}
+#cumulative events (f(y)=1-y)
+plot(fit_KM, fun="event")
+
+#log(-log(y))
+plot(fit_KM, fun="cloglog")
+
+#log of t
+plot(fit_KM, fun="log")
+```
+
+
+#### Nelson-Aalen Estimator or Fleming-Harrington 
+
+
+```{r}
+fit_FH <- survfit(surv~1,type="fleming-harrington", conf.type="log-log")
+plot(fit_FH)
+```
+```{r}
+print(fit_FH,print.rmean=TRUE)
+```
+
+```{r}
+plot(fit_FH, fun="cumhaz",col = 'blue')
+```
+
+Implementation:
+```{r}
+hazard <- -log(fit_KM$surv) 
+
+#Nelson-Aalen Estimate of H(t):
+h <- fit_KM$n.event/fit_KM$n.risk
+H <- cumsum(h) 
+
+plot(H ~ fit_KM$time, main="Nelson-Aalen Estimates", xlab="Time (t)",ylab="Estimated Cum. Hazard Function", col = "red",type = "s")
+
+```
+
+We can compare the Fleming-Harrington survival estimate to the KM estimate 
+```{r}
+plot(fit_KM, fun="cumhaz",col = 'red',ylab = 'Estimated Cumulative Hazard Function', xlab = 'Days', main = 'Comparisons of Different Non-paramatric Methods',conf.int = FALSE)
+
+lines(fit_FH,fun="cumhaz",conf.int = FALSE, type = "s", lty = 2, col = "blue")
+legend("topleft", c("Kaplan-Meier", "Nelson-Aalen"), lty = 1:2,
+col = c("red", "blue"))
+
+```
+Their performances are almost same.
+
+
+
+#### Impact of Variables 
+
+**sex**
+
+```{r}
+fit <- survfit(surv~sex,data=data)
+plot(fit, col=c(2,4))
+legend("topright",c("Male", "Female"),col=c(2,4),lty=1)
+```
+
+
+Conduct the logrank test to test the treatment effect of sex in reducing mortality
+```{r}
+# Log-rank test
+survdiff(surv ~ sex, data = data)
+```
+Fail to reject H0 that sex does not work in reducing mortality
+
+
+**ph.ecog**
+```{r}
+fit <- survfit(surv~ph.ecog,data=data)
+plot(fit, col=c(1,2,3,4))
+legend("topright",c("0","1","2","3"),col=c(1,2,3,4),lty=1)
+# Log-rank test
+survdiff(surv ~ ph.ecog, data = data)
+```
+
+```{r}
+fit <- survfit(surv~as.numeric(age>median(age)),data =data)
+plot(fit, col=c(2,4))
+legend("topright",c("Below Median", "Above Median"),col=c(2,4),lty=1)
+# Log-rank test
+survdiff(surv ~ as.numeric(age>median(age)), data = data)
+```
+
+
+### 2.Parametric Survival Regression Model
+
+Check which distributional assumption provides the best fit
+```{r}
+# Weibull Regression Model
+fit_weibull<-survreg(surv~1, dist="weibull")
+# Log-Logistic Distribution
+fit_loglogistic<-survreg(surv~1, dist="loglogistic")
+fit_exp<-survreg(surv~1, dist="exponential")
+fit_gauss<-survreg(surv~1, dist="gaussian")
+fit_logistic<-survreg(surv~1, dist="logistic")
+fit_lognormal<-survreg(surv~1, dist="lognormal")
+summary(fit_exp)
+summary(fit_weibull)
+summary(fit_gauss)
+summary(fit_logistic)
+summary(fit_lognormal)
+summary(fit_loglogistic)
+
+fit_exp$loglik
+fit_weibull$loglik
+fit_logistic$loglik
+fit_gauss$loglik
+fit_logistic$loglik
+fit_lognormal$loglik
+```
+
+
+
+
+
+### 3. Cox’s Proportional Hazards Model
+
+#### Univariate Cox regression
+
+Estimate the hazard ratio of the age and construct the associated confidence interval based on the Cox regression model.
+
+```{r}
+fit.age <- coxph(surv ~ age, data = data,
+             method='breslow', na.action = na.exclude)
+fit.age
+summary(fit.age)
+```
+##### Interpretation
+
+* At a given instant in time, someone who is 1 year older is  1.019 times as likely to die as the reference age
+
+* We are 95% confident that the true HR is between  1.001 and  1.037
+
+```{r}
+fit.sex <- coxph((surv ~ sex), data = data,
+             method='breslow', na.action = na.exclude)
+fit.sex
+summary(fit.sex)
+```
+The summary output shows the regression beta coefficients, the effect sizes (shown as hazard ratios) and statistical significance for each of the variables in relation to overall survival.
+
+```{r}
+fit.ph.ecog <- coxph((surv ~ ph.ecog), data = data,
+             method='breslow', na.action = na.exclude)
+fit.ph.ecog
+summary(fit.ph.ecog)
+```
+
+##### Univariate test to the remaining covariates
+```{r}
+covariates <- c("ph.karno", "wt.loss")
+formulas <- sapply(covariates,
+                        function(x) as.formula(paste('Surv(time, status)~', x)))
+                        
+univ_models <- lapply( formulas, function(x){coxph(x, data = data)})
+# Each factor is assessed through one univariate Cox regression.
+results <- lapply(univ_models,
+                       function(x){ 
+                          x <- summary(x)
+                          p.value<-signif(x$wald["pvalue"], digits=3)
+                          wald.test<-signif(x$wald["test"], digits=3)#p.value
+                          beta<-signif(x$coef[1], digits=2);#coeficient beta
+                          HR <-signif(x$coef[2], digits=2);#hazard ratio
+                          HR.confint.lower <- signif(x$conf.int[,"lower .95"], 2)
+                          HR.confint.upper <- signif(x$conf.int[,"upper .95"],2)
+                          HR <- paste0(HR, " (", 
+                                       HR.confint.lower, "-", HR.confint.upper, ")")
+                          res<-c(beta, HR, wald.test, p.value)
+                          names(res)<-c("beta", "HR (95% CI for HR)", "wald.test", 
+                                        "p.value")
+                          return(res)
+                         })
+as.data.frame(results, check.names = FALSE)
+
+```
+
+
+#### Full model
+```{r}
+full <- coxph(Surv(time, status) ~ age + sex + ph.karno + ph.ecog + wt.loss , data = data)
+summary(full)
+```
+
+#### Multivariate Cox regression
+
+A Cox regression of time to death on the time-constant covariates is specified as follow:
+```{r}
+fit <- coxph(surv ~ age + sex+ ph.ecog, data = data,
+             method='breslow', na.action = na.exclude)
+fit
+summary(fit)
+```
+
+
+
+##### Interpretation
+
+
+* At a given instant in time, the probability of dying for someone who is rated for ph.ecog as level one is higher than someone who is rated for level 0, adjusting for sex and age. The confidence interval is 1.0186 to 2.2276
+ 
+* We also find that sex,ph.ecog facotrs are significant at 0.1 level except for age.
+
+* The test result suggests that there is at least one coefficient that is not equal to 0.
+
+##### Visualizing the estimated distribution of survival times
+
+Visualize the predicted survival proportion at any given point in time
+
+```{r}
+#get baseline survival
+survfit(fit)
+#The function survfit() estimates the survival proportion, by default at the mean values of covariates.
+
+# Plot the baseline survival function
+ggsurvplot(survfit(fit), palette = "#2E7DDF", data = data, xlab = "Days",
+           ggtheme = theme_classic())
+```
+
+
+##### Proportionality assumption 
+cox.zph checks for p by using the Schoenfeld residuals against the transformed time. Significant results indicate that there are time dependent coefficients.
+```{r}
+cox.zph(fit)
+plot(cox.zph(fit))
+```
+
+```{r}
+res.mart <- residuals(fit, type = "martingale")
+scatter.smooth(data$time,res.mart)
+# Non-straight line indicates violation of proportional hazards assumption
+plot(res.mart ~ data$sex, data = data,
+     xlab = "Sex", ylab = "Martingale Residuals",
+     main='Martingale Residuals vs. Sex', pch =16)
+
+
+```
+
+
+
+
+##### More residuals
+```{r}
+#cox-snell residuals
+res.cox=data$status-res.mart
+fit_cs=survfit(Surv(res.cox,data$status)~1)
+Htilde=cumsum(fit_cs$n.event/fit_cs$n.risk)
+plot(fit_cs$time,Htilde,type='s',col='blue')
+abline(0,1,col='red',lty=2)
+
+```
+
+
+
+
+
+##### Stratified Cox Model
+
+```{r}
+
+# Stratified on sex
+fit.sex <- coxph(surv ~  strata(sex) + age + ph.ecog,  
+                data = data, ties = 'breslow')
+fit.sex
+
+# Estimate the hazard ratio of the separate variables versus the reference only and construct the associated confidence interval based on the Cox regression model in male and female patients, separately. Test if these two hazard ratios are identical.
+male <- subset(data,data$sex==1)
+female <- subset(data,data$sex==2)
+fit0 <- coxph(Surv(time,status) ~ age  + ph.ecog,
+              data = male, ties = 'breslow', na.action = na.exclude)
+
+fit1 <- coxph(Surv(time,status) ~  age + ph.ecog,
+              data = female, ties = 'breslow', na.action = na.exclude)
+              
+Xsq <- -2*(fit.sex$loglik[2] - (fit0$loglik[2] + fit1$loglik[2]))
+Xsq
+1 - pchisq(Xsq, 2) 
+
+qchisq(.95,2)
+qchisq(.95,1)
+
+
+# Stratified on ph.ecog
+fit.ph.ecog <- coxph(surv ~  strata(sex) + age + ph.ecog,  
+                data = data, ties = 'breslow')
+fit.ph.ecog
+
+ph0 <- subset(data,data$ph.ecog==0)
+ph1 <- subset(data,data$ph.ecog==1)
+ph2  <- subset(data,data$ph.ecog==2)
+ph3 <- subset(data,data$ph.ecog==3); str(ph3)# only 1 person has level 3, so igonore it
+
+fit0 <- coxph(Surv(time,status) ~ age  + sex,
+              data = ph0, ties = 'breslow', na.action = na.exclude)
+fit1 <- coxph(Surv(time,status) ~  age + sex,
+              data = ph1, ties = 'breslow', na.action = na.exclude)
+fit2 <- coxph(Surv(time,status) ~  age + sex,
+              data = ph2, ties = 'breslow', na.action = na.exclude)
+
+Xsq <- -2*(fit.ph.ecog$loglik[2] - (fit0$loglik[2] + fit1$loglik[2] + fit2$loglik[2]))
+Xsq
+1 - pchisq(Xsq, 2) 
+
+qchisq(.95,2)
+qchisq(.95,1)
+```
+
+##### Baseline Hazard
+```{r}
+base.haz <- basehaz(fit, centered = F)
+t <- base.haz[ ,2]
+s.est <- as.data.frame(cbind(exp(-base.haz[,1]), t))
+colnames(s.est) = c("Survival Estimate","Time")
+head(s.est) 
+```
+
+##### Estimation of Survival Function
+
+If we want to assess the impact of the sex on the estimated survival probability. In this case, we construct a new data frame with two rows, one for each value of sex; the other covariates are fixed to their average values (if they are continuous variables) or to their lowest level (if they are discrete variables). 
+
+```{r}
+# Create the new data  
+sex_df <- data.frame(row.names = NULL, check.rows = FALSE,
+           check.names = TRUE, fix.empty.names = TRUE,
+           stringsAsFactors = default.stringsAsFactors(),
+                          'sex' = c(1,2), 
+                          'age' = c(56,56),
+                          'ph.ecog'=c(0,0)
+                          )
+
+
+sex_df$sex<- as.factor(sex_df$sex)
+sex_df$ph.ecog<- as.factor(sex_df$ph.ecog)
+
+sex <- survfit(fit, newdata = sex_df)
+p <- ggsurvplot(sex, conf.int = TRUE,
+           ggtheme = theme_minimal(), data = sex_df,
+           legend.labs = c("Male","Female"),
+)
+print(p$plot)
+
+
+```
+
+
+
+
+
+
+
+
+
+

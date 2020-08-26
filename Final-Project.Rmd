@@ -227,9 +227,6 @@ Patient A: 85.4
 
 Patient B: 81.6
  
-```{r}
-fita$
-```
 
 
 
