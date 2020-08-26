@@ -143,14 +143,28 @@ print(fit_KM,print.rmean=TRUE)
 Other plots
 ```{r}
 #cumulative events (f(y)=1-y)
-plot(fit_KM, fun="event")
-
+p <- ggsurvplot(fit_KM,
+          conf.int = TRUE,
+          ggtheme = theme_bw(), # Change ggplot2 theme
+          palette = c("#E7B800", "#2E9FDF"),
+          fun = "event",data =data)
+p$plot
 #log(-log(y))
-plot(fit_KM, fun="cloglog")
-
+p <- ggsurvplot(fit_KM,
+          conf.int = TRUE,
+          ggtheme = theme_bw(), # Change ggplot2 theme
+          palette = c("#E7B800", "#2E9FDF"),
+          fun = "cloglog",data =data)
+p$plot
 #log of t
-plot(fit_KM, fun="log")
+p <- ggsurvplot(fit_KM,
+          conf.int = TRUE,
+          ggtheme = theme_bw(), # Change ggplot2 theme
+          palette = c("#E7B800", "#2E9FDF"),
+          fun = "log",data =data)
+p$plot
 ```
+ 
 
 
 #### Nelson-Aalen Estimator or Fleming-Harrington 
@@ -176,7 +190,7 @@ hazard <- -log(fit_KM$surv)
 h <- fit_KM$n.event/fit_KM$n.risk
 H <- cumsum(h) 
 
-plot(H ~ fit_KM$time, main="Nelson-Aalen Estimates", xlab="Time (t)",ylab="Estimated Cum. Hazard Function", col = "red",type = "s")
+plot(H ~ fit_KM$time, main="Nelson-Aalen Estimates", xlab="Time in Days",ylab="Estimated Cummulative Hazard Function", col = "red",type = "s")
 
 ```
 
@@ -369,17 +383,23 @@ ggsurvplot(survfit(fit), palette = "#2E7DDF", data = data, xlab = "Days",
 cox.zph checks for p by using the Schoenfeld residuals against the transformed time. Significant results indicate that there are time dependent coefficients.
 ```{r}
 cox.zph(fit)
-plot(cox.zph(fit))
+p<- ggcoxzph(cox.zph(fit))
+p$`1`
+p$`2`
+p$`3`
 ```
+A smoothing solid line is fit to the plot. The dashed lines show a 2 standard error. The betas do not vary much over time.
 
+
+#### Check for linearty of age
 ```{r}
 res.mart <- residuals(fit, type = "martingale")
-scatter.smooth(data$time,res.mart)
+ggcoxdiagnostics(fit, type = "martingale",xlab = "Time in Days", ylab = "Martingale Residuals", main='Martingale Residuals',linear.predictions = FALSE, ggtheme = theme_bw())
 # Non-straight line indicates violation of proportional hazards assumption
-plot(res.mart ~ data$sex, data = data,
-     xlab = "Sex", ylab = "Martingale Residuals",
-     main='Martingale Residuals vs. Sex', pch =16)
 
+# Martingale residual can be used to assess nonlinearity
+plot(res.mart ~ data$age, data = data, pch =16)
+# No obvious patterns in the plot may suggest no nonlinearty in age
 
 ```
 
@@ -456,9 +476,9 @@ qchisq(.95,1)
 ```{r}
 base.haz <- basehaz(fit, centered = F)
 t <- base.haz[ ,2]
-s.est <- as.data.frame(cbind(exp(-base.haz[,1]), t))
-colnames(s.est) = c("Survival Estimate","Time")
-head(s.est) 
+estimate <- as.data.frame(cbind(exp(-base.haz[,1]), t))
+colnames(estimate) = c("Survival Estimate","Time")
+head(estimate) 
 ```
 
 ##### Estimation of Survival Function
